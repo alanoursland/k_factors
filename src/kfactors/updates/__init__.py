@@ -1,9 +1,16 @@
 """Parameter update strategies for clustering algorithms."""
 
 from .mean import MeanUpdater
+from .pca import PCAUpdater, IncrementalPCAUpdater
 from .sequential_pca import SequentialPCAUpdater
+from .em_updates import GaussianEMUpdater, PPCAEMUpdater, MixingWeightUpdater
 
 __all__ = [
     'MeanUpdater',
-    'SequentialPCAUpdater'
+    'PCAUpdater',
+    'IncrementalPCAUpdater',
+    'SequentialPCAUpdater',
+    'GaussianEMUpdater',
+    'PPCAEMUpdater',
+    'MixingWeightUpdater'
 ]

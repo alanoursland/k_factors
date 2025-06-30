@@ -2,15 +2,19 @@
 
 from .kmeans import KMeans
 from .kfactors import KFactors
+from .klines import KLines
+from .ksubspaces import KSubspaces
+from .gmm import GaussianMixture
+from .cfactors import CFactors
 
 __all__ = [
     'KMeans',
-    'KFactors'
+    'KFactors',
+    'KLines',
+    'KSubspaces',
+    'GaussianMixture',
+    'CFactors'
 ]
 
 # TODO: Add these as implemented:
-# from .klines import KLines
-# from .ksubspaces import KSubspaces
-# from .cfactors import CFactors
 # from .fuzzy_cmeans import FuzzyCMeans
-# from .gmm import GaussianMixture

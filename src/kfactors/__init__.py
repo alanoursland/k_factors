@@ -31,6 +31,8 @@ from .algorithms.kmeans import KMeans
 from .algorithms.kfactors import KFactors
 from .algorithms.klines import KLines
 from .algorithms.ksubspaces import KSubspaces
+from .algorithms.gmm import GaussianMixture
+from .algorithms.cfactors import CFactors
 from .algorithms.builder import ClusteringBuilder, create_kmeans, create_ksubspaces
 
 # Convenience imports
@@ -46,6 +48,8 @@ __all__ = [
     'KFactors',
     'KLines',
     'KSubspaces',
+    'GaussianMixture',
+    'CFactors',
     
     # Builder
     'ClusteringBuilder',
