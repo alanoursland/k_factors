@@ -33,7 +33,17 @@ from .algorithms.klines import KLines
 from .algorithms.ksubspaces import KSubspaces
 from .algorithms.gmm import GaussianMixture
 from .algorithms.cfactors import CFactors
+from .algorithms.fuzzy_cmeans import FuzzyCMeans, PossibilisticCMeans, FuzzyPossibilisticCMeans
 from .algorithms.builder import ClusteringBuilder, create_kmeans, create_ksubspaces
+
+# Import visualization
+from .visualization import (
+    plot_clusters_2d,
+    plot_clusters_3d,
+    plot_fuzzy_clusters,
+    plot_cluster_boundaries,
+    plot_gaussian_ellipses
+)
 
 # Convenience imports
 from .base import (
@@ -50,6 +60,9 @@ __all__ = [
     'KSubspaces',
     'GaussianMixture',
     'CFactors',
+    'FuzzyCMeans',
+    'PossibilisticCMeans',
+    'FuzzyPossibilisticCMeans',
     
     # Builder
     'ClusteringBuilder',
@@ -60,6 +73,13 @@ __all__ = [
     'ClusterState',
     'AssignmentMatrix',
     'DirectionTracker',
+    
+    # Visualization
+    'plot_clusters_2d',
+    'plot_clusters_3d',
+    'plot_fuzzy_clusters',
+    'plot_cluster_boundaries',
+    'plot_gaussian_ellipses',
     
     # Version
     '__version__'

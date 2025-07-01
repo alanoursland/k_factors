@@ -6,6 +6,7 @@ from .klines import KLines
 from .ksubspaces import KSubspaces
 from .gmm import GaussianMixture
 from .cfactors import CFactors
+from .fuzzy_cmeans import FuzzyCMeans, PossibilisticCMeans, FuzzyPossibilisticCMeans
 
 __all__ = [
     'KMeans',
@@ -13,8 +14,8 @@ __all__ = [
     'KLines',
     'KSubspaces',
     'GaussianMixture',
-    'CFactors'
+    'CFactors',
+    'FuzzyCMeans',
+    'PossibilisticCMeans',
+    'FuzzyPossibilisticCMeans'
 ]
-
-# TODO: Add these as implemented:
-# from .fuzzy_cmeans import FuzzyCMeans

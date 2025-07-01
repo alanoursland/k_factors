@@ -8,13 +8,26 @@ from .soft import (
     AnnealedSoftAssignment,
     EntropyRegularizedAssignment
 )
+from .fuzzy import (
+    FuzzyAssignment,
+    PossibilisticAssignment,
+    FuzzyPossibilisticAssignment
+)
 
 __all__ = [
+    # Hard assignments
     'HardAssignment',
     'HardAssignmentWithInfo',
     'PenalizedAssignment',
+    
+    # Soft assignments
     'SoftAssignment',
     'GaussianSoftAssignment',
     'AnnealedSoftAssignment',
-    'EntropyRegularizedAssignment'
+    'EntropyRegularizedAssignment',
+    
+    # Fuzzy assignments
+    'FuzzyAssignment',
+    'PossibilisticAssignment',
+    'FuzzyPossibilisticAssignment'
 ]
