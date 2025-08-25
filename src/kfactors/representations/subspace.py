@@ -4,7 +4,7 @@ Subspace representation for K-Subspaces/K-Lines clustering.
 Represents clusters as affine subspaces (point + linear subspace).
 """
 
-from typing import Dict, Optional, Union
+from typing import Dict, Optional, Tuple
 import torch
 from torch import Tensor
 
