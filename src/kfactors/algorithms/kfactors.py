@@ -305,7 +305,8 @@ class KFactors(BaseClusteringAlgorithm):
             # Update direction tracker with claimed directions
             self.direction_tracker_.add_claimed_directions_batch(
                 assignments,
-                torch.stack([rep.W[:, stage] for rep in self.representations])
+                torch.stack([rep.W[:, stage] for rep in self.representations]),
+                claimed_weights=stage_weights
             )
             
             # Store stage results
