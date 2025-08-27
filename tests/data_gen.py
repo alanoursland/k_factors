@@ -127,13 +127,45 @@ def make_aniso_gaussians(
         Per-cluster ground-truth top principal directions (unit vectors). In Phase 2,
         this may be computed either from the true covariances (after rotation) or from
         the generated samples with labels.
-
-    Notes
-    -----
-    - Implemented in Phase 2 (post Phase 1). For Phase 0 this function is a stub.
-    - The outputs GA and GB should each have shape (d,) representing the top PC.
     """
-    raise NotImplementedError("Phase 2 will implement make_aniso_gaussians()")
+    rng = np.random.default_rng(seed)
+
+    covA = np.asarray(covA, dtype=float)
+    covB = np.asarray(covB, dtype=float)
+    assert covA.shape == (d, d), f"covA must be (d,d); got {covA.shape}"
+    assert covB.shape == (d, d), f"covB must be (d,d); got {covB.shape}"
+
+    if rotA is not None:
+        rotA = np.asarray(rotA, dtype=float)
+        assert rotA.shape == (d, d), f"rotA must be (d,d); got {rotA.shape}"
+        SigmaA = rotA @ covA @ rotA.T
+    else:
+        SigmaA = covA
+
+    if rotB is not None:
+        rotB = np.asarray(rotB, dtype=float)
+        assert rotB.shape == (d, d), f"rotB must be (d,d); got {rotB.shape}"
+        SigmaB = rotB @ covB @ rotB.T
+    else:
+        SigmaB = covB
+
+    # Ground-truth top principal directions (eigenvectors of covariance)
+    wA, V_A = np.linalg.eigh(SigmaA)
+    wB, V_B = np.linalg.eigh(SigmaB)
+    GA = V_A[:, np.argmax(wA)]
+    GB = V_B[:, np.argmax(wB)]
+    # Normalize to unit (just in case of numerical drift)
+    GA = GA / (np.linalg.norm(GA) + 1e-12)
+    GB = GB / (np.linalg.norm(GB) + 1e-12)
+
+    mean = np.zeros(d, dtype=float)
+    XA = rng.multivariate_normal(mean=mean, cov=SigmaA, size=n_per).astype(np.float32)
+    XB = rng.multivariate_normal(mean=mean, cov=SigmaB, size=n_per).astype(np.float32)
+
+    X = np.vstack([XA, XB]).astype(np.float32)
+    y = np.concatenate([np.zeros(n_per, dtype=np.int64), np.ones(n_per, dtype=np.int64)])
+
+    return X, y, (GA.astype(np.float32), GB.astype(np.float32))
 
 
 def make_two_planes_3d(
@@ -166,8 +198,38 @@ def make_two_planes_3d(
         Ground-truth orthonormal bases for the two planes, each of shape (2, 3).
         Row vectors represent unit directions spanning each plane.
 
-    Notes
-    -----
-    - Implemented in Phase 3. For Phase 0 this function is a stub.
     """
-    raise NotImplementedError("Phase 3 will implement make_two_planes_3d()")
+    rng = np.random.default_rng(seed)
+
+    # Plane 1: span{e1, e2}
+    e1 = np.array([1.0, 0.0, 0.0], dtype=float)
+    e2 = np.array([0.0, 1.0, 0.0], dtype=float)
+    G1 = np.stack([e1, e2], axis=0)  # (2, 3), rows are basis vectors
+
+    # Plane 2: create a reproducible, distinct 2D subspace and orthonormalize
+    M = rng.normal(size=(3, 2))
+    # Make sure it's not accidentally too close to Plane 1; if so, nudge Z axis
+    if np.linalg.matrix_rank(M) < 2:
+        M += np.array([[0.0, 0.0], [0.0, 0.0], [1e-1, -1e-1]])
+    # Orthonormal columns via QR; then return as rows
+    Q, _ = np.linalg.qr(M)  # Q: (3, 2) with orthonormal columns
+    G2 = Q.T  # (2, 3), rows are orthonormal basis vectors
+
+    # Sample coefficients in the plane and add small isotropic noise in R^3
+    T1 = rng.normal(size=(n_per, 2)).astype(np.float32)
+    T2 = rng.normal(size=(n_per, 2)).astype(np.float32)
+    X1 = (T1 @ G1).astype(np.float32)
+    X2 = (T2 @ G2).astype(np.float32)
+
+    if noise > 0.0:
+        X1 += (noise * rng.normal(size=X1.shape)).astype(np.float32)
+        X2 += (noise * rng.normal(size=X2.shape)).astype(np.float32)
+
+    X = np.vstack([X1, X2]).astype(np.float32)
+    y = np.concatenate([np.zeros(n_per, dtype=np.int64), np.ones(n_per, dtype=np.int64)])
+
+    # Ensure rows are unit-norm (QR already gives unit columns; we’re returning rows)
+    G1 = (G1 / (np.linalg.norm(G1, axis=1, keepdims=True) + 1e-12)).astype(np.float32)
+    G2 = (G2 / (np.linalg.norm(G2, axis=1, keepdims=True) + 1e-12)).astype(np.float32)
+
+    return X, y, (G1, G2)
