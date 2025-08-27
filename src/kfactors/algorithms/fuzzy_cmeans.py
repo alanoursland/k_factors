@@ -230,26 +230,8 @@ class FuzzyCMeans(BaseClusteringAlgorithm):
             raise RuntimeError("Model must be fitted first")
             
         # Outlier score is 1 - max_typicality
-        return 1.0 - self.typicality_t_.max(dim=1)[0] 'k-means++':
-                self.initialization_strategy = KMeansPlusPlusInit()
-            elif self.init == 'random':
-                from ..initialization.random import RandomInit
-                self.initialization_strategy = RandomInit()
-            else:
-                raise ValueError(f"Unknown init method: {self.init}")
-        else:
-            from ..initialization.from_previous import FromPreviousInit
-            self.initialization_strategy = FromPreviousInit(self.init)
-            
-        # Combined convergence
-        self.convergence_criterion = CombinedCriterion([
-            ChangeInObjective(rel_tol=self.tol),
-            ParameterChange(tol=self.tol, parameter='mean')
-        ], mode='any')
-        
-        # Objective
-        self.objective = FuzzyCMeansObjective(m=self.m)
-        
+        return 1.0 - self.typicality_t_.max(dim=1)[0] 
+    
     def _create_representations(self, data: Tensor) -> List[ClusterRepresentation]:
         """Create centroid representations."""
         representations = []
@@ -610,4 +592,74 @@ class FuzzyPossibilisticCMeans(FuzzyCMeans):
         self.update_strategy = MeanUpdater()
         
         if isinstance(self.init, str):
-            if self.init ==
+            if self.init == 'k-means++':
+                self.initialization_strategy = KMeansPlusPlusInit()
+            elif self.init == 'random':
+                from ..initialization.random import RandomInit
+                self.initialization_strategy = RandomInit()
+            else:
+                raise ValueError(f"Unknown init method: {self.init}")
+        else:
+            from ..initialization.from_previous import FromPreviousInit
+            self.initialization_strategy = FromPreviousInit(self.init)
+
+        # Convergence (same pattern as FCM)
+        self.convergence_criterion = CombinedCriterion([
+            ChangeInObjective(rel_tol=self.tol),
+            ParameterChange(tol=self.tol, parameter='mean')
+        ], mode='any')
+
+        # Objective (same as FCM in this codebase)
+        self.objective = FuzzyCMeansObjective(m=self.m)
+
+    def fit(self, X: Tensor, y: Optional[Tensor] = None) -> 'FuzzyPossibilisticCMeans':
+        """Fit FPCM clustering."""
+        if self.verbose:
+            print(f"Fuzzy-Possibilistic C-Means: {self.n_clusters} clusters")
+            print(f"  Fuzzy m={self.m_fuzzy}, Possibilistic m={self.m_poss}")
+            print(f"  Weights: a={self.a}, b={self.b}")
+
+        super().fit(X, y)
+
+        # Extract both membership types
+        if self.history_:
+            final_state = self.history_[-1]
+            aux_info = final_state.metadata.get('aux_info', {})
+
+            # Some pipelines store a combined soft matrix in assignments;
+            # keep that as u_ for compatibility, and also expose the split forms.
+            self.u_ = final_state.assignments.get_soft()
+            self.fuzzy_u_ = aux_info.get('fuzzy_memberships', self.u_)
+            self.typicality_t_ = aux_info.get('typicalities', self.u_)
+            self.eta_ = aux_info.get('eta', None)
+
+        return self
+
+    def get_outlier_scores(self) -> Tensor:
+        """Scores in [0, 1]; higher means more outlier-like."""
+        if self.typicality_t_ is None:
+            raise RuntimeError("Model must be fitted first")
+        # Outlier score is 1 - max typicality across clusters
+        return 1.0 - self.typicality_t_.max(dim=1)[0]
+
+    
+    # 'k-means++':
+    #             self.initialization_strategy = KMeansPlusPlusInit()
+    #         elif self.init == 'random':
+    #             from ..initialization.random import RandomInit
+    #             self.initialization_strategy = RandomInit()
+    #         else:
+    #             raise ValueError(f"Unknown init method: {self.init}")
+    #     else:
+    #         from ..initialization.from_previous import FromPreviousInit
+    #         self.initialization_strategy = FromPreviousInit(self.init)
+            
+    #     # Combined convergence
+    #     self.convergence_criterion = CombinedCriterion([
+    #         ChangeInObjective(rel_tol=self.tol),
+    #         ParameterChange(tol=self.tol, parameter='mean')
+    #     ], mode='any')
+        
+    #     # Objective
+    #     self.objective = FuzzyCMeansObjective(m=self.m)
+        
