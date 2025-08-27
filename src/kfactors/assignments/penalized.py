@@ -113,27 +113,19 @@ class PenalizedAssignment(AssignmentStrategy):
                 current_directions, 
                 penalty_type=self.penalty_type
             )
-            
-            # Penalized cost = penalty * distance
-            # Low penalty (near 0) = high cost for reusing direction
-            # High penalty (near 1) = normal cost
-            penalized_distances = distances * (self.penalty_weight * penalties + (1 - self.penalty_weight))
         else:
             penalties = torch.ones(n_points, n_clusters, device=device)
-            penalized_distances = distances
             
         # Assign to minimum penalized distance
-        assignments = torch.argmin(penalized_distances, dim=1)
+        assignments = torch.argmin(distances, dim=1)
         
         # Prepare auxiliary information
         aux_info = {
             'distances': distances,
             'penalties': penalties,
-            'penalized_distances': penalized_distances,
             'current_directions': current_directions,
             'current_stage': current_stage,
             'min_distances': torch.gather(distances, 1, assignments.unsqueeze(1)).squeeze(1),
-            'min_penalized_distances': torch.gather(penalized_distances, 1, assignments.unsqueeze(1)).squeeze(1)
         }
         
-        return assignments, aux_inf
+        return assignments, aux_info

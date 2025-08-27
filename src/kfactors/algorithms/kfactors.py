@@ -254,6 +254,14 @@ class KFactors(BaseClusteringAlgorithm):
                 assignment_matrix = AssignmentMatrix(
                     assignments, self.n_clusters, is_soft=False
                 )
+
+                penalties = aux_info.get('penalties', None)
+                if penalties is not None:
+                    # pick the penalty of the assigned cluster for each point → (n,)
+                    stage_weights = penalties.gather(1, assignments.view(-1, 1)).squeeze(1)
+                else:
+                    # fallback: all ones
+                    stage_weights = torch.ones_like(assignments, dtype=torch.float32, device=X.device)
                 
                 # Update each cluster's representation
                 for k, representation in enumerate(self.representations):
@@ -261,9 +269,11 @@ class KFactors(BaseClusteringAlgorithm):
                     
                     if len(cluster_indices) > 0:
                         cluster_points = X[cluster_indices]
+                        cluster_weights = stage_weights[cluster_indices]  # (n_k,)
                         self.update_strategy.update(
                             representation,
                             cluster_points,
+                            assignment_weights=cluster_weights,
                             current_stage=stage
                         )
                         
@@ -311,7 +321,7 @@ class KFactors(BaseClusteringAlgorithm):
                 
         # Store final results
         self.labels_ = assignments
-        self.cluster_centers_ = cluster_state.means
+        # self.cluster_centers_ = cluster_state.means
         self.cluster_bases_ = torch.stack([
             rep.W for rep in self.representations
         ])
