@@ -1,0 +1,17 @@
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+
+[tool.coverage.run]
+source = ["src/kfactors"]
+branch = true
+omit = ["**/__init__.py"]
+
+[tool.coverage.report]
+omit = ["**/__init__.py"]
+show_missing = true
