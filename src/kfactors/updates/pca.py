@@ -31,14 +31,14 @@ class PCAUpdater(ParameterUpdater):
         
     def update(self, representation: ClusterRepresentation,
                points: Tensor,
-               assignments: Optional[Tensor] = None,
+               assignment_weights: Optional[Tensor] = None,
                **kwargs) -> None:
         """Update representation using PCA.
         
         Args:
             representation: Subspace or PPCA representation to update
             points: Points assigned to this cluster
-            assignments: Weights for soft assignment (optional)
+            assignment_weights: Weights for soft assignment (optional)
             **kwargs: Additional parameters (unused)
         """
         if len(points) == 0:
@@ -54,19 +54,19 @@ class PCAUpdater(ParameterUpdater):
                           f"got {type(representation)}")
                           
         # Update mean
-        if assignments is None:
+        if assignment_weights is None:
             # Hard assignment - simple mean
             new_mean = points.mean(dim=0)
             centered = points - new_mean
         else:
             # Soft assignment - weighted mean
-            assert assignments.shape == (points.shape[0],)
-            total_weight = assignments.sum()
+            assert assignment_weights.shape == (points.shape[0],)
+            total_weight = assignment_weights.sum()
             
             if total_weight <= 0:
                 return
                 
-            normalized_weights = assignments / total_weight
+            normalized_weights = assignment_weights / total_weight
             new_mean = torch.sum(points * normalized_weights.unsqueeze(1), dim=0)
             centered = points - new_mean
             
@@ -152,7 +152,7 @@ class IncrementalPCAUpdater(ParameterUpdater):
         
     def update(self, representation: ClusterRepresentation,
                points: Tensor,
-               assignments: Optional[Tensor] = None,
+               assignment_weights: Optional[Tensor] = None,
                **kwargs) -> None:
         """Update representation incrementally.
         
@@ -172,7 +172,7 @@ class IncrementalPCAUpdater(ParameterUpdater):
         # Update mean incrementally
         old_mean = representation.mean.clone()
         
-        if assignments is None:
+        if assignment_weights is None:
             # Hard assignment
             batch_size = len(points)
             batch_mean = points.mean(dim=0)
@@ -183,11 +183,11 @@ class IncrementalPCAUpdater(ParameterUpdater):
             
         else:
             # Soft assignment
-            total_weight = assignments.sum()
+            total_weight = assignment_weights.sum()
             if total_weight <= 0:
                 return
                 
-            normalized_weights = assignments / total_weight
+            normalized_weights = assignment_weights / total_weight
             batch_mean = torch.sum(points * normalized_weights.unsqueeze(1), dim=0)
             
             # Weight-aware incremental update
@@ -213,8 +213,8 @@ class IncrementalPCAUpdater(ParameterUpdater):
             
         # Incremental update using Oja's rule variant
         for i, point in enumerate(centered):
-            if assignments is not None:
-                weight = assignments[i]
+            if assignment_weights is not None:
+                weight = assignment_weights[i]
             else:
                 weight = 1.0
                 
@@ -240,7 +240,7 @@ class IncrementalPCAUpdater(ParameterUpdater):
         representation.basis = basis
         
         # Update sample counter
-        if assignments is None:
+        if assignment_weights is None:
             self._n_samples_seen[cluster_id] += len(points)
         else:
-            self._n_samples_seen[cluster_id] += assignments.sum().item()
+            self._n_samples_seen[cluster_id] += assignment_weights.sum().item()

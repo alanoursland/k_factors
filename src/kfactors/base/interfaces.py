@@ -103,14 +103,14 @@ class ParameterUpdater(ABC):
     @abstractmethod
     def update(self, representation: ClusterRepresentation,
                points: Tensor,
-               assignments: Tensor,
+               assignment_weights: Tensor,
                **kwargs) -> None:
         """Update cluster parameters given points and assignments.
         
         Args:
             representation: Cluster representation to update
             points: (n, d) tensor of all data points
-            assignments: Either (n,) hard or (n, K) soft assignments
+            assignment_weights: Either (n,) hard or (n, K) soft assignments
             **kwargs: Update-specific parameters
         """
         pass

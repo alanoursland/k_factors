@@ -31,7 +31,7 @@ class SequentialPCAUpdater(ParameterUpdater):
         
     def update(self, representation: ClusterRepresentation,
                points: Tensor,
-               assignments: Optional[Tensor] = None,
+               assignment_weights: Optional[Tensor] = None,
                current_stage: Optional[int] = None,
                **kwargs) -> None:
         """Update representation with next principal component.
@@ -39,7 +39,7 @@ class SequentialPCAUpdater(ParameterUpdater):
         Args:
             representation: PPCA or Subspace representation to update
             points: Points assigned to this cluster
-            assignments: Ignored (for compatibility)
+            assignment_weights: Weighted contribution of points to each feature
             current_stage: Override stage if provided
             **kwargs: Additional info from assignment
         """
@@ -51,20 +51,41 @@ class SequentialPCAUpdater(ParameterUpdater):
         if len(points) == 0:
             return
             
+        if assignment_weights is not None:
+            w = assignment_weights.to(points.device).clamp_min(0.0)
+            w_sum = w.sum()
+            if w_sum.item() > 0:
+                w_norm = w / w_sum
+                # Weighted mean
+                representation.mean = torch.sum(points * w_norm.unsqueeze(1), dim=0)
+                centered = points - representation.mean.unsqueeze(0)
+                # Apply sqrt-weights for covariance/SVD steps
+                centered = centered * torch.sqrt(w_norm).unsqueeze(1)
+            else:
+                # No effective weight: keep previous mean; nothing to do
+                return
+        else:
+            # Unweighted path
+            representation.mean = points.mean(dim=0)
+            centered = points - representation.mean.unsqueeze(0)
+
         # Update mean (always use latest assigned points)
         representation.mean = points.mean(dim=0)
         centered = points - representation.mean.unsqueeze(0)
         
         if isinstance(representation, PPCARepresentation):
-            self._update_ppca(representation, centered, stage)
+            self._update_ppca(representation, centered, stage, assignment_weights)
         elif isinstance(representation, SubspaceRepresentation):
             self._update_subspace(representation, centered, stage)
         else:
             raise TypeError(f"Sequential PCA updater requires PPCA or Subspace representation, "
                           f"got {type(representation)}")
                           
-    def _update_ppca(self, representation: PPCARepresentation, 
-                     centered: Tensor, stage: int) -> None:
+    def _update_ppca(self, 
+                     representation: PPCARepresentation, 
+                     centered: Tensor, 
+                     stage: int,
+                     assignments: Optional[Tensor] = None) -> None:
         """Update PPCA representation sequentially."""
         d = centered.shape[1]
         
@@ -85,9 +106,15 @@ class SequentialPCAUpdater(ParameterUpdater):
             residuals = centered
             
         # Compute covariance of residuals
-        n = residuals.shape[0]
-        cov = torch.matmul(residuals.t(), residuals) / n
-        
+        # n_eff: total weight if weighted, else n_samples
+        if assignments is not None:
+            w = assignments.to(residuals.device).clamp_min(0.0)
+            n = w.sum()
+            cov = torch.matmul(residuals.t(), residuals) / (n + 1e-12)
+        else:
+            n = residuals.shape[0]
+            cov = torch.matmul(residuals.t(), residuals) / n
+
         # Extract top eigenvector
         try:
             eigvals, eigvecs = torch.linalg.eigh(cov)

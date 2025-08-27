@@ -70,7 +70,7 @@ class GaussianEMUpdater(ParameterUpdater):
         
     def update(self, representation: ClusterRepresentation,
                points: Tensor,
-               assignments: Tensor,
+               assignment_weights: Tensor,
                all_points: Optional[Tensor] = None,
                all_assignments: Optional[Tensor] = None,
                **kwargs) -> None:
@@ -79,7 +79,7 @@ class GaussianEMUpdater(ParameterUpdater):
         Args:
             representation: GaussianRepresentation to update
             points: (n, d) points (subset for this cluster if hard assignment)
-            assignments: (n,) soft responsibilities for these points
+            assignment_weights: (n,) soft responsibilities for these points
             all_points: For tied covariance, all data points
             all_assignments: For tied covariance, all responsibilities (n, K)
             **kwargs: Additional info from E-step
@@ -93,7 +93,7 @@ class GaussianEMUpdater(ParameterUpdater):
             kwargs['shared_covariance'] = self._shared_covariance
             
         # Delegate to representation's update method
-        representation.update_from_points(points, weights=assignments, **kwargs)
+        representation.update_from_points(points, weights=assignment_weights, **kwargs)
         
     def _update_shared_covariance(self, points: Tensor, responsibilities: Tensor,
                                  representations: list = None, **kwargs):
@@ -167,7 +167,7 @@ class PPCAEMUpdater(ParameterUpdater):
         
     def update(self, representation: ClusterRepresentation,
                points: Tensor,
-               assignments: Tensor,
+               assignment_weights: Tensor,
                **kwargs) -> None:
         """Update PPCA parameters using EM.
         
@@ -176,7 +176,7 @@ class PPCAEMUpdater(ParameterUpdater):
         Args:
             representation: PPCARepresentation to update
             points: (n, d) points assigned to this cluster
-            assignments: (n,) soft responsibilities
+            assignment_weights: (n,) soft responsibilities
         """
         if not isinstance(representation, PPCARepresentation):
             raise TypeError("PPCAEMUpdater requires PPCARepresentation")
@@ -185,11 +185,11 @@ class PPCAEMUpdater(ParameterUpdater):
             return
             
         # Normalize responsibilities
-        total_resp = assignments.sum()
+        total_resp = assignment_weights.sum()
         if total_resp <= 1e-10:
             return
             
-        normalized_resp = assignments / total_resp
+        normalized_resp = assignment_weights / total_resp
         
         # Update mean
         representation.mean = torch.sum(points * normalized_resp.unsqueeze(1), dim=0)
@@ -252,7 +252,7 @@ class MixingWeightUpdater(ParameterUpdater):
         
     def update(self, representation: ClusterRepresentation,
                points: Tensor,
-               assignments: Tensor,
+               assignment_weights: Tensor,
                total_points: Optional[int] = None,
                **kwargs) -> None:
         """Update mixing weight based on responsibilities.
@@ -263,15 +263,15 @@ class MixingWeightUpdater(ParameterUpdater):
         Args:
             representation: Not used (for interface compatibility)
             points: Not used
-            assignments: (n,) responsibilities for this cluster
+            assignment_weights: (n,) responsibilities for this cluster
             total_points: Total number of data points
         """
         # Compute effective count
-        n_k = assignments.sum()
+        n_k = assignment_weights.sum()
         
         # Total points defaults to sum of all assignments
         if total_points is None:
-            total_points = len(assignments)
+            total_points = len(assignment_weights)
             
         # Update mixing weight
         mixing_weight = torch.clamp(n_k / total_points, min=self.min_weight)
