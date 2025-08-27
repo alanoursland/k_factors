@@ -5,7 +5,7 @@ This module provides efficient data structures for storing cluster states,
 assignments, and auxiliary information needed by various algorithms.
 """
 
-from typing import Optional, List, Dict, Any, Union
+from typing import Optional, List, Tuple, Dict, Any, Union
 import torch
 from torch import Tensor
 from dataclasses import dataclass, field
@@ -195,19 +195,26 @@ class DirectionTracker:
         self.n_clusters = n_clusters
         self.device = device
         
-        # List of claimed directions per point
-        self.claimed_directions: List[List[Tensor]] = [[] for _ in range(n_points)]
+        # List of claimed directions and weight per point
+        self.claimed_directions: List[List[Tuple[Tensor, float]]] = [[] for _ in range(n_points)]
         
         # Current iteration/stage
         self.current_stage = 0
         
+    @staticmethod
+    def _unit(v: Tensor) -> Tensor:
+        return v / (v.norm() + 1e-12)
+
     def add_claimed_direction(self, point_idx: int, cluster_idx: int, 
-                            direction: Tensor) -> None:
+                            direction: Tensor, weight: float = 1.0) -> None:
         """Record that a point claimed a specific direction."""
-        self.claimed_directions[point_idx].append(direction.detach())
+        w = float(max(0.0, min(1.0, weight)))
+        d_unit = self._unit(direction.detach())
+        self.claimed_directions[point_idx].append((d_unit, w))
         
     def add_claimed_directions_batch(self, assignments: Tensor, 
-                                   cluster_bases: Tensor) -> None:
+                                   cluster_bases: Tensor,
+                                   claimed_weights: Optional[Tensor] = None) -> None:
         """Batch update of claimed directions for current stage.
         
         Args:
@@ -222,73 +229,98 @@ class DirectionTracker:
             else:
                 # Single direction per cluster
                 direction = cluster_bases[cluster]
-            self.claimed_directions[i].append(direction.detach())
+            w = 1.0 if claimed_weights is None else float(claimed_weights[i].item())
+            self.claimed_directions[i].append((self._unit(direction.detach()), max(0.0, min(1.0, w))))
             
-    def compute_penalty(self, point_idx: int, test_direction: Tensor, 
-                       penalty_type: str = 'product') -> float:
-        """Compute penalty for using a direction based on claimed history.
-        
-        Args:
-            point_idx: Which point
-            test_direction: Direction to test
-            penalty_type: 'product' or 'sum' penalty
-            
-        Returns:
-            Penalty value in [0, 1]
+    def compute_penalty(
+        self,
+        point_idx: int,
+        test_direction: Tensor,
+        penalty_type: str = 'product',
+    ) -> float:
+        """Compute penalty in [0,1] for using test_direction at this point.
+        Uses stored (direction, weight) pairs; normalizes directions on use.
+        product:   ∏ (1 - a * |cos|)
+        sum:       1 - ( Σ a*|cos| / Σ a )
         """
-        if not self.claimed_directions[point_idx]:
-            return 1.0  # No penalty if no claimed directions
-            
-        similarities = []
-        for claimed_dir in self.claimed_directions[point_idx]:
-            # Compute absolute cosine similarity
-            sim = torch.abs(torch.dot(test_direction, claimed_dir))
-            similarities.append(sim)
-            
-        similarities = torch.stack(similarities)
-        
+        history = self.claimed_directions[point_idx]
+        if not history:
+            return 1.0  # no prior claims → no penalty
+
+        # normalize candidate
+        u = test_direction / (test_direction.norm() + 1e-12)
+
+        sims = []
+        wts = []
+        for d, a in history:
+            if a <= 0.0:
+                continue
+            du = d / (d.norm() + 1e-12)      # normalize stored dir on use
+            c = torch.abs(torch.dot(u, du))  # |cosine|
+            sims.append(c)
+            wts.append(a)
+
+        if not sims:  # all weights were <= 0
+            return 1.0
+
+        sims_t = torch.stack(sims)  # (M,)
+        w_t = torch.tensor(wts, device=sims_t.device, dtype=sims_t.dtype)
+        w_t = torch.clamp(w_t, 0.0, 1.0)
+
         if penalty_type == 'product':
-            # Product of (1 - similarity) terms
-            penalty = torch.prod(1.0 - similarities)
+            factors = 1.0 - torch.clamp(w_t * sims_t, 0.0, 1.0)
+            penalty = torch.clamp(factors, 0.0, 1.0).prod()
         elif penalty_type == 'sum':
-            # Average of (1 - similarity) terms
-            penalty = torch.mean(1.0 - similarities)
+            num = (w_t * sims_t).sum()
+            den = torch.clamp(w_t.sum(), min=1e-12)
+            penalty = torch.clamp(1.0 - num / den, 0.0, 1.0)
         else:
             raise ValueError(f"Unknown penalty type: {penalty_type}")
-            
-        return penalty.item()
+
+        return float(penalty)
         
-    def compute_penalty_batch(self, test_directions: Tensor, 
-                            penalty_type: str = 'product') -> Tensor:
-        """Compute penalties for multiple points and directions.
-        
-        Args:
-            test_directions: (n, K, d) directions to test for each point-cluster pair
-            penalty_type: 'product' or 'sum' penalty
-            
-        Returns:
-            (n, K) penalty matrix
-        """
-        n, k, d = test_directions.shape
-        penalties = torch.ones(n, k, device=self.device)
-        
+    def compute_penalty_batch(
+        self,
+        test_directions: Tensor,           # (n, K, d)
+        penalty_type: str = 'product',
+    ) -> Tensor:
+        """Return (n, K) penalties in [0,1]."""
+        n, K, d = test_directions.shape
+        penalties = torch.ones(n, K, device=self.device, dtype=test_directions.dtype)
+
+        # normalize candidates on use: (n, K, d)
+        Ui = test_directions
+        Ui_norm = Ui.norm(dim=2, keepdim=True).clamp_min(1e-12)
+        Ui_unit = Ui / Ui_norm
+
         for i in range(n):
-            if not self.claimed_directions[i]:
-                continue  # No penalty
-                
-            claimed_stack = torch.stack(self.claimed_directions[i])  # (history, d)
-            
-            for j in range(k):
-                # Compute similarities to all claimed directions
-                similarities = torch.abs(
-                    torch.matmul(claimed_stack, test_directions[i, j])
-                )  # (history,)
-                
-                if penalty_type == 'product':
-                    penalties[i, j] = torch.prod(1.0 - similarities)
-                elif penalty_type == 'sum':
-                    penalties[i, j] = torch.mean(1.0 - similarities)
-                    
+            hist = self.claimed_directions[i]
+            if not hist:
+                continue
+
+            dirs, ws = zip(*hist)  # tuples → two lists
+            claimed_stack = torch.stack(dirs, dim=0)  # (M_i, d)
+            w_hist = torch.tensor(ws, device=self.device, dtype=Ui.dtype)
+            w_hist = torch.clamp(w_hist, 0.0, 1.0)
+
+            # normalize claimed dirs on use
+            cs_norm = claimed_stack.norm(dim=1, keepdim=True).clamp_min(1e-12)
+            claimed_unit = claimed_stack / cs_norm  # (M_i, d)
+
+            # sims: (K, M_i) = |Ui_unit @ claimed_unit^T|
+            sims = torch.abs(Ui_unit[i] @ claimed_unit.t())  # (K, M_i)
+
+            if penalty_type == 'product':
+                factors = 1.0 - torch.clamp(sims * w_hist, 0.0, 1.0)
+                pi = torch.clamp(factors, 0.0, 1.0).prod(dim=1)  # (K,)
+                penalties[i] = pi
+            elif penalty_type == 'sum':
+                num = (sims * w_hist).sum(dim=1)
+                den = w_hist.sum().clamp_min(1e-12)
+                penalties[i] = torch.clamp(1.0 - num / den, 0.0, 1.0)
+            else:
+                raise ValueError(f"Unknown penalty type: {penalty_type}")
+
         return penalties
         
     def advance_stage(self) -> None:
@@ -306,7 +338,7 @@ class DirectionTracker:
         new_tracker.current_stage = self.current_stage
         for i in range(self.n_points):
             new_tracker.claimed_directions[i] = [
-                d.to(device) for d in self.claimed_directions[i]
+                (d.to(device), float(w)) for (d, w) in self.claimed_directions[i]
             ]
         return new_tracker
 
