@@ -8,7 +8,9 @@ Given
 * the number of clusters $K$,
 * and a target subspace dimension $R$ per cluster,
 
-we wish to partition the points into $K$ clusters and, for each cluster $k$, extract an **orthonormal basis** $\{v_k^{(1)},\dots,v_k^{(R)}\}\subset\R^d$ (plus a mean $\mu_k$) so that each point incrementally “claims” one dimension that best explains its residual variance.
+we wish to partition the points into $K$ clusters and, for each cluster $k$, extract an **orthonormal basis** $\{v_k^{(1)},\dots,v_k^{(R)}\}\subset\R^d$ (plus a mean $\mu_k$) so that each point incrementally “claims” one dimension that best explains its residual variance.  
+
+Once a point has claimed a direction, it contributes **less (down to zero)** to future directions that overlap with the claimed one, and **fully** to directions that are orthogonal.
 
 ---
 
@@ -16,10 +18,11 @@ we wish to partition the points into $K$ clusters and, for each cluster $k$, ext
 
 At each **stage** $t=1,\dots,R$ we:
 
-1. **Assign** each point $x_i$ to the single best cluster-direction $(k,\ell)$.
+1. **Assign** each point $x_i$ to the cluster whose current subspace best explains its residual variance.  
+   (Assignments themselves are based on residual distance, not on the penalties.)
 2. **Update** each cluster’s mean $\mu_k$ by averaging its assigned points.
-3. **Extract** the new direction $v_k^{(t)}$ by doing a rank-1 PCA on the **residuals** after removing previously claimed directions.
-4. **Record** for each point which direction it claimed, so we can penalize re-use.
+3. **Extract** the new direction $v_k^{(t)}$ by doing a rank-1 PCA on the **residuals**, weighting each point by a penalty that reduces its contribution if it has already claimed a similar direction.
+4. **Record** for each point which direction it claimed, so we can penalize re-use in later stages.
 
 ---
 
@@ -35,15 +38,13 @@ For all i,  set D_i←empty list
 
 for t = 1 to R:
   // ——————————————————————————————
-  // 1) (Hard) Assignment Step with Penalty
+  // 1) (Hard) Assignment Step
   for i in 1…n:
     for k in 1…K:
-      // penalty from previously claimed directions
-      p_{ik} = ∏_{d∈D_i} (1 − |v_k·d|)
       // residual projector after removing old directions in cluster k
       P_k^{(<t)} = ∑_{u=1}^{t-1} v_k^{(u)} v_k^{(u)ᵀ}
       r_{ik} = (I − P_k^{(<t)}) (x_i − μ_k)
-      cost_{ik} = p_{ik} · ‖r_{ik}‖²
+      cost_{ik} = ‖r_{ik}‖²
     end
     (k_i,ℓ_i) = argmin_{k} cost_{ik}          // ℓ_i ≡ t implicitly
     assign x_i → cluster k_i
@@ -60,7 +61,13 @@ for t = 1 to R:
     Form residuals for assigned points:
       y_i = x_i − μ_k
       r_i = (I − ∑_{u=1}^{t-1} v_k^(u) v_k^(u)ᵀ ) y_i
-    Compute scatter S_k = ∑_{i:assigned} r_i r_iᵀ
+
+    Compute penalty weights:
+      w_i = ∏_{d∈D_i} (1 − |v_k^{(t)}·d|)
+      // 1.0 if orthogonal, 0.0 if parallel
+
+    Form weighted scatter S_k = ∑_{i:assigned} w_i · (r_i r_iᵀ)
+
     v_k^(t) = top eigenvector of S_k   // unit‐norm
   end
 
@@ -69,21 +76,20 @@ for t = 1 to R:
     append d_i^t ← v_{k_i}^{(t)}  to D_i
   end
 end
-```
+````
 
 ---
 
 ## 4. Time Complexity
 
-Let $n$ = #points, $d$ = ambient dimension, $K$ = #clusters, $R$ = subspace dimension per cluster, and assume we run **one assignment + mean-update** cycle per stage (for simplicity).
+Let \$n\$ = #points, \$d\$ = ambient dimension, \$K\$ = #clusters, \$R\$ = subspace dimension per cluster, and assume we run **one assignment + mean-update** cycle per stage (for simplicity).
 
-1. **Assignment step** per stage $t$:
+1. **Assignment step** per stage \$t\$:
 
-   * For each point–cluster pair $(i,k)$:
+   * For each point–cluster pair \$(i,k)\$:
 
-     * Compute penalty $p_{ik}$: $O(t)$ inner products.
-     * Compute residual $r_{ik}$: projecting out $t-1$ directions costs $O(t\,d)$.
-     * Squared norm: $O(d)$.
+     * Compute residual \$r\_{ik}\$: projecting out \$t-1\$ directions costs \$O(t,d)\$.
+     * Squared norm: \$O(d)\$.
    * Total per stage:
 
      $$
@@ -100,9 +106,9 @@ Let $n$ = #points, $d$ = ambient dimension, $K$ = #clusters, $R$ = subspace dime
 
 3. **Sequential PCA** per cluster per stage:
 
-   * Residual scatter: $O(|\mathcal X_k|\,d\,t)$, summing over $k$ gives $O(n\,d\,t)$.
-   * Top‐eigenvector of a $d\times d$ matrix: $O(d^2)$ per power-iteration; constant number ⇒ $O(d^2)$.
-   * Over $K$ clusters:
+   * Weighted residual scatter: \$O(|\mathcal X\_k|,d,t)\$, summing over \$k\$ gives \$O(n,d,t)\$.
+   * Top‐eigenvector of a \$d\times d\$ matrix: \$O(d^2)\$ per power-iteration; constant number ⇒ \$O(d^2)\$.
+   * Over \$K\$ clusters:
 
      $$
        O(n\,d\,t \;+\; K\,d^2)
@@ -110,7 +116,7 @@ Let $n$ = #points, $d$ = ambient dimension, $K$ = #clusters, $R$ = subspace dime
        O(n\,d\,R + K\,d^2).
      $$
 
-Summing across $t=1\ldots R$, the **total** time is on the order of
+Summing across \$t=1\ldots R\$, the **total** time is on the order of
 
 $$
 \sum_{t=1}^R \Bigl[O(n\,K\,d\,t) + O(n\,d) + O(n\,d\,t + K\,d^2)\Bigr]
@@ -118,19 +124,19 @@ $$
 O\bigl(n\,K\,d\,R^2 + K\,d^2\,R + n\,d\,R\bigl).
 $$
 
-In practice $R\ll d$ or $R\ll K$, so the dominant costs are
-$\;O(n\,K\,d\,R^2)$ for assignment and
-$\;O(K\,d^2\,R)$ for eigen‐computations.
+In practice \$R\ll d\$ or \$R\ll K\$, so the dominant costs are
+\$;O(n,K,d,R^2)\$ for assignment and
+\$;O(K,d^2,R)\$ for eigen-computations.
 
 ---
 
 ## 5. Space Complexity
 
-* **Data matrix** $X$: $O(n\,d)$.
-* **Cluster means** $\{\mu_k\}$: $O(K\,d)$.
-* **Directions** $\{v_k^{(u)}\}$: $O(K\,d\,R)$.
-* **Point‐wise claimed lists** $D_i$: storing $t$ unit-vectors per point ⇒ $O(n\,d\,R)$.
-* **Temporary residuals/scatters**: $O(d^2)$ per cluster.
+* **Data matrix** \$X\$: \$O(n,d)\$.
+* **Cluster means** \${\mu\_k}\$: \$O(K,d)\$.
+* **Directions** \${v\_k^{(u)}}\$: \$O(K,d,R)\$.
+* **Point-wise claimed lists** \$D\_i\$: storing \$t\$ unit-vectors per point ⇒ \$O(n,d,R)\$.
+* **Temporary residuals/scatters**: \$O(d^2)\$ per cluster.
 
 Overall:
 
@@ -143,6 +149,6 @@ $$
 ### Remarks
 
 * This algorithm is **block-coordinate-descent** on a well-defined objective (hard Mixture of PPCA), so it **monotonically decreases** that objective.
-* In the special case $R=1$ it reduces to the standard **K-Lines / K-Subspaces** algorithm.
+* In the special case \$R=1\$ it reduces to the standard **K-Lines / K-Subspaces** algorithm.
 * When soft assignments replace the hard arg-mins, you recover **Mixtures of Probabilistic PCA** (an EM algorithm).
 
