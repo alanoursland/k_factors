@@ -6,7 +6,7 @@ line (plus a mean). Useful for data that lies approximately along different
 directions.
 """
 
-from typing import Optional, List
+from typing import Optional, List, Tuple
 import torch
 from torch import Tensor
 

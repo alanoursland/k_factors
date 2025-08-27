@@ -5,7 +5,7 @@ Soft clustering algorithm that models each cluster as a low-rank Gaussian
 (PPCA model). This is the soft counterpart to K-Factors.
 """
 
-from typing import Optional, List, Union
+from typing import Optional, List, Union, Dict, Any
 import torch
 from torch import Tensor
 

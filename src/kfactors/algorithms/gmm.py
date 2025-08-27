@@ -5,7 +5,7 @@ Probabilistic clustering using a mixture of multivariate Gaussians
 with various covariance structures.
 """
 
-from typing import Optional, List, Union, Literal
+from typing import Optional, List, Union, Literal, Dict, Tuple
 import torch
 from torch import Tensor
 import warnings
