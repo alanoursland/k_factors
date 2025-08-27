@@ -68,9 +68,18 @@ class PenalizedAssignment(AssignmentStrategy):
                 # This is the distance to the subspace at current stage
                 centered = points - representation.mean.unsqueeze(0)
                 
-                # Get current stage basis vector
-                if current_stage < representation.W.shape[1]:
-                    current_basis = representation.W[:, :current_stage+1]
+                # Build an orthonormal basis for span(W) (do NOT mutate rep)
+                W_full = representation.W
+                if W_full.numel() > 0:
+                    # QR gives Q with orthonormal columns spanning W
+                    # (reduced mode by default)
+                    Q, _ = torch.linalg.qr(W_full)
+                else:
+                    Q = W_full  # empty
+
+                # Current stage uses the first (current_stage+1) orthonormal cols
+                if current_stage < Q.shape[1]:
+                    current_basis = Q[:, :current_stage+1]
                     
                     # Project onto current basis
                     coeffs = torch.matmul(centered, current_basis)
@@ -80,8 +89,8 @@ class PenalizedAssignment(AssignmentStrategy):
                     residuals = centered - projections
                     distances[:, k] = torch.sum(residuals * residuals, dim=1)
                     
-                    # Current direction is the newest basis vector
-                    current_directions[:, k] = representation.W[:, current_stage]
+                    # Current direction used for penalty = unit column of Q
+                    current_directions[:, k] = current_basis[:, -1]
                 else:
                     # All dimensions used - just distance to full subspace
                     distances[:, k] = representation.distance_to_point(points)

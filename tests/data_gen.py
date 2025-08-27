@@ -10,12 +10,15 @@ Intended usage (Phase 1+):
     >>> X, y, G = make_two_lines_3d()
     >>> X.shape, y.shape, G.shape
     ((400, 3), (400,), (2, 3))
+
+Phase 2 note: 
+    implement `make_two_lines_3d`; leave the others as stubs with clear 
+    docstrings so imports succeed and later phases can fill them in.
 """
 
 from __future__ import annotations
 
-from typing import Optional, Tuple
-
+from typing import Tuple, Optional
 import numpy as np
 
 NDArray = np.ndarray
@@ -27,10 +30,11 @@ def make_two_lines_3d(
     seed: Optional[int] = None,
 ) -> Tuple[NDArray, NDArray, NDArray]:
     """
-    Construct two 1D-ish clusters in R^3 aligned with the canonical axes.
+    Construct two 1D line-like clusters in R^3 with small isotropic noise.
 
-    Cluster 0 lies approximately along e_x (the x-axis) with small isotropic noise.
-    Cluster 1 lies approximately along e_y (the y-axis) with small isotropic noise.
+    Cluster 0 lies approximately along e_x = (1,0,0).
+    Cluster 1 lies approximately along e_y = (0,1,0).
+    Both are centered at the origin (means are 0) with additive Gaussian noise.
 
     Parameters
     ----------
@@ -51,12 +55,34 @@ def make_two_lines_3d(
     G : (2, 3) ndarray, float32
         Ground-truth unit directions for each cluster as row vectors, in the
         same ordering as labels: [[1,0,0], [0,1,0]].
-
-    Notes
-    -----
-    - Implemented in Phase 1. For Phase 0 this function is a stub.
     """
-    raise NotImplementedError("Phase 1 will implement make_two_lines_3d()")
+    rng = np.random.default_rng(seed)
+
+    # Cluster 0 ~ line along x
+    t0 = rng.normal(size=(n_per, 1))
+    c0 = np.hstack(
+        [
+            t0,  # dominant x
+            noise * rng.normal(size=(n_per, 1)),
+            noise * rng.normal(size=(n_per, 1)),
+        ]
+    )
+
+    # Cluster 1 ~ line along y
+    t1 = rng.normal(size=(n_per, 1))
+    c1 = np.hstack(
+        [
+            noise * rng.normal(size=(n_per, 1)),
+            t1,  # dominant y
+            noise * rng.normal(size=(n_per, 1)),
+        ]
+    )
+
+    X = np.vstack([c0, c1]).astype(np.float32)  # (2*n_per, 3)
+    y = np.concatenate([np.zeros(n_per, dtype=np.int64), np.ones(n_per, dtype=np.int64)])
+    G = np.asarray([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], dtype=np.float32)
+
+    return X, y, G
 
 
 def make_aniso_gaussians(
