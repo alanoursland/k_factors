@@ -11,6 +11,7 @@ from torch import Tensor
 from ..base.interfaces import AssignmentStrategy, ClusterRepresentation
 from ..base.data_structures import DirectionTracker
 from ..representations.ppca import PPCARepresentation
+from ..representations.eigenfactor import EigenFactorRepresentation
 from ..representations.subspace import SubspaceRepresentation
 
 
@@ -111,7 +112,32 @@ class PenalizedAssignment(AssignmentStrategy):
                     current_directions[:, k] = representation.basis[:, current_stage]
                 else:
                     distances[:, k] = representation.distance_to_point(points)
-                    
+
+            elif isinstance(representation, EigenFactorRepresentation):
+                # Flat factors: compute distances over all factors inside this single representation
+                ef = representation
+                Kf = ef.n_factors
+                eps = 1e-12
+
+                # (n, Kf): squared normalized residual to each hyperplane
+                x_exp = points.unsqueeze(1)             # (n, 1, D)
+                mu = ef.means.unsqueeze(0)              # (1, Kf, D)
+                w  = ef.vectors.unsqueeze(0)            # (1, Kf, D)
+
+                centered = x_exp - mu                   # (n, Kf, D)
+                num = (centered * w).sum(dim=2)         # (n, Kf)
+                den = (ef.vectors * ef.vectors).sum(dim=1).clamp_min(eps).unsqueeze(0)  # (1, Kf)
+                distances_f = (num * num) / den         # (n, Kf)
+
+                # directions for penalty (same vector per point/factor)
+                current_dirs = ef.vectors.unsqueeze(0).expand(n_points, Kf, -1)  # (n, Kf, D)
+
+                # --- minimal change: overwrite the preallocated tensors and cluster count ---
+                distances = distances_f
+                current_directions = current_dirs
+                n_clusters = Kf  # ensure downstream penalty/argmin operate over factors
+                break            # we handled the flat case; no other reps expected
+
             else:
                 # Fallback for other representations
                 distances[:, k] = representation.distance_to_point(points)

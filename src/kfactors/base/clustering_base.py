@@ -298,42 +298,57 @@ class BaseClusteringAlgorithm:
         
     def _extract_cluster_state(self) -> ClusterState:
         """Extract current cluster parameters into ClusterState object."""
-        # Collect means
+        rep0 = self.representations[0]
+        try:
+            from ..representations.eigenfactor import EigenFactorRepresentation
+        except Exception:
+            EigenFactorRepresentation = None  # type: ignore
+
+        if EigenFactorRepresentation is not None and isinstance(rep0, EigenFactorRepresentation):
+            means = rep0.means  # (K, D)
+            K, D = means.shape
+            state = ClusterState(
+                means=means,
+                n_clusters=K,
+                dimension=D,
+            )
+            # expose vectors as a "basis" of width 1 for compatibility: (K, 1, D)
+            state.bases = rep0.vectors.unsqueeze(1)  # (K, 1, D)
+            return state
+
         means = torch.stack([
-            rep.get_parameters()['mean'] 
+            rep.get_parameters()['mean']
             for rep in self.representations
         ])
-        
         state = ClusterState(
             means=means,
             n_clusters=self.n_clusters,
             dimension=means.shape[1]
         )
-        
-        # Add other parameters if present
+
         first_rep_params = self.representations[0].get_parameters()
-        
+
         if 'basis' in first_rep_params:
             bases = []
             for rep in self.representations:
                 basis = rep.get_parameters()['basis']
                 bases.append(basis)
             state.bases = torch.stack(bases)
-            
+
         if 'covariance' in first_rep_params:
             covs = torch.stack([
                 rep.get_parameters()['covariance']
                 for rep in self.representations
             ])
             state.covariances = covs
-            
+
         if 'variance' in first_rep_params:
             vars = torch.stack([
                 rep.get_parameters()['variance']
-                for rep in self.representations  
+                for rep in self.representations
             ])
             state.variances = vars
-            
+
         return state
         
     @property

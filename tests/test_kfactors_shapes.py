@@ -1,11 +1,19 @@
 
 import numpy as np
 import pytest
+import torch
 
 try:
     from kfactors.algorithms import KFactors
-except Exception:
+except Exception:  # pragma: no cover
     KFactors = None
+
+
+def _abs_cos(u: torch.Tensor, v: torch.Tensor, eps: float = 1e-12) -> float:
+    u = u / (u.norm() + eps)
+    v = v / (v.norm() + eps)
+    return float(torch.abs(torch.dot(u, v)).item())
+
 
 @pytest.mark.skipif(KFactors is None, reason="KFactors not implemented/exposed yet")
 def test_kfactors_finds_local_directions_and_separates_clusters():
@@ -17,27 +25,23 @@ def test_kfactors_finds_local_directions_and_separates_clusters():
     c2 = np.hstack([0.1*rng.normal(size=(200,1)), t2, 0.1*rng.normal(size=(200,1))])  # ~ey
     X = np.vstack([c1, c2]).astype(np.float32)
 
-    model = KFactors(n_clusters=2, n_components=1, random_state=0)
+    model = KFactors(n_clusters=2, n_components=1, random_state=0, verbose=0)
     model.fit(X)
 
-    # ---- check learned directions align with {ex, ey} up to sign/perm/scale ----
-    assert hasattr(model, "cluster_bases_")
-    bases = model.cluster_bases_  # (K, d, r) torch tensor; here r=1
-    assert bases.shape[0] == 2 and bases.shape[1] == X.shape[1] and bases.shape[2] == 1
+    # With the flat EigenFactorRepresentation, learned directions are in cluster_vectors_: (K, D)
+    W = model.cluster_vectors_.detach().cpu()  # shape (2, 3)
 
-    # normalize per-cluster vectors (scale not guaranteed in PPCA W)
-    B = []
-    for k in range(2):
-        v = bases[k, :, 0].detach().cpu().numpy()
-        v = v / (np.linalg.norm(v) + 1e-12)
-        B.append(v)
-    B = np.stack(B, axis=0)  # (2, d)
+    ex = torch.tensor([1.0, 0.0, 0.0])
+    ey = torch.tensor([0.0, 1.0, 0.0])
 
-    G = np.eye(3)[:2]  # ground-truth directions ex, ey → shape (2, 3)
+    # similarity matrix between learned vectors and canonical axes
+    S = torch.empty(2, 2)
+    S[0, 0] = _abs_cos(W[0], ex)
+    S[0, 1] = _abs_cos(W[0], ey)
+    S[1, 0] = _abs_cos(W[1], ex)
+    S[1, 1] = _abs_cos(W[1], ey)
 
-    # pairwise |cosine| similarities (2x2)
-    S = np.abs(B @ G.T)
-    # best permutation-invariant match score
+    # best bipartite match (2x2 case): either (0->ex, 1->ey) or (0->ey, 1->ex)
     match_score = max(S[0,0] + S[1,1], S[0,1] + S[1,0])
     # require strong alignment to the two axes (both ~>0.9 on average)
     assert match_score > 1.8
