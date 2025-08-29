@@ -18,7 +18,7 @@ from ..base.interfaces import (
 from ..base.data_structures import DirectionTracker, AssignmentMatrix, ClusterState
 from ..representations.ppca import PPCARepresentation
 from ..representations.eigenfactor import EigenFactorRepresentation
-from ..assignments.penalized import PenalizedAssignment
+from ..assignments.factors import IndependentFactorAssignment
 from ..updates.sequential_pca import SequentialPCAUpdater
 from ..initialization.kmeans_plusplus import KMeansPlusPlusInit
 from ..utils.convergence import ChangeInObjective
@@ -90,10 +90,6 @@ class KFactors(BaseClusteringAlgorithm):
         Number of principal components 
     init : str or array-like, default='k-means++'
         Initialization method
-    penalty_type : str, default='product'
-        Type of penalty: 'product' or 'sum'
-    penalty_weight : float, default=0.9
-        Weight for penalty term (0=no penalty, 1=full penalty)
     max_iter : int, default=30
         Maximum iterations per stage
     tol : float, default=1e-4
@@ -118,8 +114,6 @@ class KFactors(BaseClusteringAlgorithm):
     def __init__(self,
                  n_factors: int,
                  init: str = 'k-means++',
-                 penalty_type: str = 'product',
-                 penalty_weight: float = 0.9,
                  max_iter: int = 30,
                  tol: float = 1e-4,
                  verbose: int = 0,
@@ -137,8 +131,6 @@ class KFactors(BaseClusteringAlgorithm):
         
         self.n_factors = n_factors
         self.init = init
-        self.penalty_type = penalty_type
-        self.penalty_weight = penalty_weight
         
         # K-Factors specific attributes
         self.direction_tracker_ = None
@@ -148,10 +140,7 @@ class KFactors(BaseClusteringAlgorithm):
     def _create_components(self) -> None:
         """Create K-Factors specific components."""
         # Assignment with penalty
-        self.assignment_strategy = PenalizedAssignment(
-            penalty_type=self.penalty_type,
-            penalty_weight=self.penalty_weight
-        )
+        self.assignment_strategy = IndependentFactorAssignment()
         
         # Sequential PCA updater
         self.update_strategy = SequentialPCAUpdater()

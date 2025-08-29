@@ -86,6 +86,8 @@ class AssignmentStrategy(ABC):
             Either:
             - (n,) tensor of hard assignments (cluster indices)
             - (n, K) tensor of soft assignments (responsibilities)
+            - (n, K) tensor of feature indices ordered by distance
+              aux_info: {'distances': (n, K) corresponding distances}
             - Tuple of (assignments, auxiliary_info) for strategies that track state
         """
         pass
@@ -94,8 +96,11 @@ class AssignmentStrategy(ABC):
     @abstractmethod
     def is_soft(self) -> bool:
         """Whether this strategy produces soft (probabilistic) assignments."""
-        pass
+        return False
 
+    @property
+    def is_ranked(self) -> bool:
+        return False
 
 class ParameterUpdater(ABC):
     """Abstract base class for cluster parameter update strategies."""
